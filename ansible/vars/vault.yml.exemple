@@ -1,0 +1,4 @@
+# Copier en vars/vault.yml, changer la valeur, puis chiffrer :
+#   ansible-vault encrypt vars/vault.yml
+# Seul le fichier CHIFFRÉ doit être commité.
+vault_redis_password: "changez-moi"

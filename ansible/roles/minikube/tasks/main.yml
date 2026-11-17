@@ -1,0 +1,27 @@
+- name: Installer minikube
+  ansible.builtin.get_url:
+    url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    dest: /usr/local/bin/minikube
+    mode: "0755"
+
+- name: Installer kubectl
+  ansible.builtin.get_url:
+    url: "https://dl.k8s.io/release/{{ kubectl_version }}/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: "0755"
+
+- name: Minikube est-il déjà démarré ?
+  ansible.builtin.command: minikube status
+  become: true
+  become_user: "{{ minikube_user }}"
+  register: mk_status
+  changed_when: false
+  failed_when: false
+
+- name: Démarrer Minikube (driver docker, addons metrics-server et ingress)
+  ansible.builtin.command: >-
+    minikube start --driver=docker --cpus={{ minikube_cpus }} --memory={{ minikube_memory }}
+    --addons=metrics-server --addons=ingress
+  become: true
+  become_user: "{{ minikube_user }}"
+  when: mk_status.rc != 0

@@ -1,0 +1,88 @@
+# Déploie Legeni WebApp dans Kubernetes.
+#   ansible-playbook deploy.yml -e target_env=staging -e image_tag=1.0.0-12 --vault-password-file ...
+- name: Déployer Legeni WebApp ({{ target_env }})
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - vars/common.yml
+    - "vars/{{ target_env }}.yml"
+    - vars/vault.yml
+
+  tasks:
+    - name: Contrôler les paramètres
+      ansible.builtin.assert:
+        that:
+          - target_env in ['staging', 'prod']
+          - image_tag is defined
+          - image_tag != 'latest'
+        fail_msg: "target_env doit valoir staging ou prod, image_tag est obligatoire et jamais 'latest'"
+
+    - name: Namespace {{ namespace }}
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        template: templates/k8s/namespace.yml.j2
+
+    - name: Secret Redis (mot de passe issu du Vault)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        template: templates/k8s/redis-secret.yml.j2
+      no_log: true
+
+    - name: Redis (StatefulSet + volume persistant)
+      kubernetes.core.k8s:
+        state: present
+        apply: true
+        template: templates/k8s/redis.yml.j2
+
+    - name: Attendre que Redis soit prêt
+      ansible.builtin.command: >-
+        kubectl -n {{ namespace }} rollout status statefulset/redis --timeout=180s
+      changed_when: false
+
+    - name: Déploiement de l'application avec retour arrière automatique
+      block:
+        - name: Appliquer Deployment + Service ({{ image_repo }}:{{ image_tag }})
+          kubernetes.core.k8s:
+            state: present
+            apply: true
+            template: templates/k8s/webapp.yml.j2
+
+        - name: Attendre la fin du rolling update
+          ansible.builtin.command: >-
+            kubectl -n {{ namespace }} rollout status deployment/{{ app_name }} --timeout=150s
+          changed_when: false
+
+        - name: Smoke test - la version servie est-elle {{ image_tag }} ?
+          ansible.builtin.uri:
+            url: "http://{{ minikube_ip }}:{{ node_port }}/api/info"
+            return_content: true
+          register: info
+          until: info.json is defined and info.json.version == image_tag
+          retries: 10
+          delay: 3
+
+        - name: Résultat
+          ansible.builtin.debug:
+            msg: "✅ {{ namespace }} sert la version {{ info.json.version }} ({{ info.json.hostname }})"
+
+      rescue:
+        - name: ROLLBACK - revenir à la révision précédente
+          ansible.builtin.command: >-
+            kubectl -n {{ namespace }} rollout undo deployment/{{ app_name }}
+          register: undo
+          failed_when: false
+
+        - name: ROLLBACK - attendre le retour de l'ancienne version
+          ansible.builtin.command: >-
+            kubectl -n {{ namespace }} rollout status deployment/{{ app_name }} --timeout=150s
+          failed_when: false
+          changed_when: false
+
+        - name: Signaler l'échec
+          ansible.builtin.fail:
+            msg: >-
+              ❌ Le déploiement de {{ image_tag }} dans {{ namespace }} a échoué.
+              Rollback effectué : {{ undo.stdout | default('aucune révision précédente') }}

@@ -1,0 +1,30 @@
+- name: Dossier Jenkins
+  ansible.builtin.file:
+    path: "{{ jenkins_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Récupérer le GID du groupe docker
+  ansible.builtin.getent:
+    database: group
+    key: docker
+
+- name: Dockerfile Jenkins (Jenkins LTS + client Docker)
+  ansible.builtin.copy:
+    src: Dockerfile
+    dest: "{{ jenkins_dir }}/Dockerfile"
+    mode: "0644"
+
+- name: docker-compose.yml Jenkins
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ jenkins_dir }}/docker-compose.yml"
+    mode: "0644"
+  vars:
+    docker_gid: "{{ ansible_facts.getent_group.docker[1] }}"
+
+- name: Démarrer Jenkins
+  community.docker.docker_compose_v2:
+    project_src: "{{ jenkins_dir }}"
+    build: policy
+    state: present

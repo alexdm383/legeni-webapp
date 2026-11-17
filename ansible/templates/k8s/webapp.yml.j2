@@ -1,0 +1,70 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ app_name }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ app_name }}
+    env: {{ target_env }}
+spec:
+  replicas: {{ replicas }}
+  revisionHistoryLimit: 5
+  minReadySeconds: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0     # on ne retire jamais un pod avant que le nouveau soit prêt : zéro coupure
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: {{ app_name }}
+  template:
+    metadata:
+      labels:
+        app: {{ app_name }}
+        env: {{ target_env }}
+    spec:
+      containers:
+        - name: webapp
+          image: {{ image_repo }}:{{ image_tag }}
+          ports:
+            - containerPort: 5000
+          env:
+            - name: APP_ENV
+              value: "{{ target_env }}"
+            - name: APP_COLOR
+              value: "{{ app_color }}"
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: redis-secret, key: password }
+          readinessProbe:
+            httpGet: { path: {{ readiness_path }}, port: 5000 }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: 5000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 50m, memory: 96Mi }
+            limits: { cpu: 300m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ app_name }}
+  namespace: {{ namespace }}
+  labels:
+    app: {{ app_name }}
+    env: {{ target_env }}
+spec:
+  type: NodePort
+  selector:
+    app: {{ app_name }}
+  ports:
+    - port: 80
+      targetPort: 5000
+      nodePort: {{ node_port }}

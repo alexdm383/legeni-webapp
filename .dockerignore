@@ -1,0 +1,13 @@
+.git
+.venv
+__pycache__/
+*.pyc
+.pytest_cache/
+reports/
+Jenkinsfile
+docker-compose*.yml
+nginx/
+README.md
+ansible/
+ci/
+docs/

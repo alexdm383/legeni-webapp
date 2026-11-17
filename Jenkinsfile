@@ -18,16 +18,19 @@ pipeline {
         DEPLOYER     = "legeni-deployer:ci-${BUILD_NUMBER}"
     }
 
-    stages {
-        stage('Préparation') {
-            steps {
-                script {
-                    env.APP_VERSION = readFile('VERSION').trim()
-                    env.TAG = "${env.APP_VERSION}-${env.BUILD_NUMBER}"   // ex. 1.0.0-12, jamais "latest"
+                   stage('Syntaxe Ansible') {
+                    steps {
+                        sh 'docker build -f ci/deployer.Dockerfile -t $DEPLOYER ansible'
+                        // deploy.yml charge vault.yml (chiffré) : la vérification a besoin du mot de passe Vault
+                        withCredentials([string(credentialsId: 'ansible-vault-pass', variable: 'VAULT_PASS')]) {
+                            sh '''
+                                docker run --rm -e VAULT_PASS $DEPLOYER sh -c \
+                                  'printf "%s" "$VAULT_PASS" > /tmp/vp && ansible-playbook --syntax-check deploy.yml -e target_env=staging --vault-password-file /tmp/vp'
+                                docker run --rm $DEPLOYER ansible-playbook --syntax-check provision.yml
+                            '''
+                        }
+                    }
                 }
-                echo "Branche ${env.BRANCH_NAME} - image ${env.IMAGE}:${env.TAG}"
-            }
-        }
 
         stage('Qualité') {
             parallel {

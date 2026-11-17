@@ -3,5 +3,5 @@ image_repo: alexdm38/legeni-webapp
 namespace: "legeni-{{ target_env }}"
 # Adresse du nœud Minikube sur son réseau Docker (le conteneur deployer est branché dessus)
 minikube_ip: 192.168.49.2
-readiness_path: /mauvais chemin
+readiness_path: /ready
 redis_password: "{{ vault_redis_password }}"
